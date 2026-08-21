@@ -1,72 +1,97 @@
 import pygame
 import math
+import random
 
-class FinalBoss:
-    def __init__(self, screen_width):
-        self.screen_width = screen_width
-        self.x = float(screen_width // 2)
-        self.y = -120.0
-        self.target_y = 150.0
-        self.max_hp = 100
-        self.hp = 100
-        self.active = False
-        self.move_dir = 1
-        self.bullets = []
-        self.last_shot_time = 0
+COLOR_CYAN = (0, 240, 255)
+COLOR_NEON_PINK = (255, 0, 110)
+COLOR_NEON_GREEN = (0, 255, 140)
+COLOR_CORE_WHITE = (240, 250, 255)
+COLOR_DARK_STEEL = (30, 35, 50)
+COLOR_PANEL_BG = (10, 14, 28, 200)
 
-    def spawn(self):
+class Boss:
+    def __init__(self, x, y):
+        self.x = float(x)
+        self.y = float(y)
+        self.target_y = 180.0
+        self.max_hp = 500
+        self.hp = 500
+        self.radius = 65
+        self.angle = 0.0
+        self.vx = 2.5
         self.active = True
-        self.hp = self.max_hp
-        self.y = -120.0
+        self.phase = 1
+        self.last_shot_time = 0
+        self.shoot_cooldown = 1200  # ms between boss bullet waves
 
-    def update(self, now):
-        if not self.active:
-            return
-
+    def update(self, now, width):
+        # Entry animation
         if self.y < self.target_y:
-            self.y += 2.0
-        else:
-            self.x += 2.5 * self.move_dir
-            if self.x < 100 or self.x > self.screen_width - 100:
-                self.move_dir *= -1
+            self.y += 1.5
 
-        if now - self.last_shot_time > 800:
-            self.last_shot_time = now
-            for angle in [-0.3, 0, 0.3]:
-                self.bullets.append({
-                    "x": self.x, "y": self.y + 40,
-                    "vx": math.sin(angle) * 6,
-                    "vy": math.cos(angle) * 6
-                })
+        # Horizontal sweeping movement
+        self.x += self.vx
+        if self.x - self.radius < 20 or self.x + self.radius > width - 20:
+            self.vx *= -1
 
-        for b in self.bullets[:]:
-            b["x"] += b["vx"]
-            b["y"] += b["vy"]
-            if b["y"] > 1000 or b["x"] < -20 or b["x"] > self.screen_width + 20:
-                self.bullets.remove(b)
+        # Rotation effect
+        self.angle += 0.02
+
+        # Phase logic based on health
+        if self.hp < self.max_hp * 0.4:
+            self.phase = 3
+            self.shoot_cooldown = 600
+        elif self.hp < self.max_hp * 0.7:
+            self.phase = 2
+            self.shoot_cooldown = 900
 
     def draw(self, surface):
-        if not self.active:
-            return
-
         bx, by = int(self.x), int(self.y)
 
-        pygame.draw.polygon(surface, (255, 0, 110), [(bx, by + 50), (bx - 70, by - 30), (bx + 70, by - 30)])
-        pygame.draw.polygon(surface, (40, 10, 30), [(bx, by + 30), (bx - 50, by - 20), (bx + 50, by - 20)])
-        pygame.draw.circle(surface, (255, 0, 110), (bx, by), 20)
-        pygame.draw.circle(surface, (255, 255, 255), (bx, by), 10)
+        # Pulsing Core Glow
+        pulse = math.sin(self.angle * 3) * 6
+        glow_color = COLOR_NEON_PINK if self.phase == 3 else (COLOR_CYAN if self.phase == 1 else COLOR_NEON_GREEN)
+        
+        glow_surf = pygame.Surface((180, 180), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surf, (*glow_color, 40), (90, 90), int(75 + pulse))
+        pygame.draw.circle(glow_surf, (*glow_color, 90), (90, 90), int(50 + pulse * 0.5))
+        surface.blit(glow_surf, (bx - 90, by - 90))
 
-        # Health Bar
-        bar_w, bar_h = 200, 12
-        bar_x, bar_y = bx - bar_w // 2, by - 60
-        pct = max(0, self.hp / self.max_hp)
-        pygame.draw.rect(surface, (40, 10, 20), (bar_x, bar_y, bar_w, bar_h), border_radius=6)
-        pygame.draw.rect(surface, (255, 0, 110), (bar_x, bar_y, int(bar_w * pct), bar_h), border_radius=6)
-        pygame.draw.rect(surface, (255, 255, 255), (bar_x, bar_y, bar_w, bar_h), width=2, border_radius=6)
+        # Main Hull Geometry (3D Hexagon structure)
+        pts_outer = []
+        for i in range(6):
+            a = self.angle + (i * math.pi / 3)
+            r = self.radius + (math.sin(self.angle * 2 + i) * 4)
+            pts_outer.append((bx + math.cos(a) * r, by + math.sin(a) * r))
 
-        for b in self.bullets:
-            pygame.draw.circle(surface, (255, 0, 110), (int(b["x"]), int(b["y"])), 8)
-            pygame.draw.circle(surface, (255, 255, 255), (int(b["x"]), int(b["y"])), 4)
+        pygame.draw.polygon(surface, COLOR_DARK_STEEL, pts_outer)
+        pygame.draw.polygon(surface, glow_color, pts_outer, width=3)
 
-    def get_rect(self):
-        return pygame.Rect(self.x - 65, self.y - 35, 130, 70)
+        # Inner Glowing Core
+        pygame.draw.circle(surface, COLOR_CORE_WHITE, (bx, by), int(20 + pulse * 0.3))
+        pygame.draw.circle(surface, glow_color, (bx, by), 12)
+
+        # Side Wing Cannons
+        pygame.draw.circle(surface, COLOR_DARK_STEEL, (bx - 70, by + 10), 14)
+        pygame.draw.circle(surface, glow_color, (bx - 70, by + 10), 14, width=2)
+        pygame.draw.circle(surface, COLOR_DARK_STEEL, (bx + 70, by + 10), 14)
+        pygame.draw.circle(surface, glow_color, (bx + 70, by + 10), 14, width=2)
+
+    def draw_health_bar(self, surface, width):
+        bar_w = 400
+        bar_h = 16
+        bar_x = (width - bar_w) // 2
+        bar_y = 80
+
+        # Health bar glass frame
+        frame = pygame.Surface((bar_w + 8, bar_h + 8), pygame.SRCALPHA)
+        pygame.draw.rect(frame, COLOR_PANEL_BG, (0, 0, bar_w + 8, bar_h + 8), border_radius=6)
+        pygame.draw.rect(frame, COLOR_NEON_PINK, (0, 0, bar_w + 8, bar_h + 8), width=2, border_radius=6)
+        surface.blit(frame, (bar_x - 4, bar_y - 4))
+
+        # Fill percentage
+        fill_pct = max(0, self.hp / self.max_hp)
+        fill_w = int(bar_w * fill_pct)
+        if fill_w > 0:
+            fill_color = COLOR_NEON_GREEN if fill_pct > 0.5 else (COLOR_CYAN if fill_pct > 0.25 else COLOR_NEON_PINK)
+            pygame.draw.rect(surface, fill_color, (bar_x, bar_y, fill_w, bar_h), border_radius=4)
